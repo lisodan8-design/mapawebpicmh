@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/filter.css">
+<link rel="stylesheet" href="css/nouislider.min.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title>Mapa web PI CMH</title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/tailDT.js"></script>
+<script src="js/nouislider.min.js"></script>
+<script src="js/wNumb.js"></script>
+        <script src="data/veredasturbo_2.js"></script>
+        <script src="data/datos_PIH_todos_3.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+            highlightLayer.openPopup();
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:27, minZoom:1
+        }).fitBounds([[7.950451633071108,-76.7459138791443],[8.078020142725816,-76.50970063526358]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var title = new L.Control({'position':'topleft'});
+        title.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        title.update = function () {
+            this._div.innerHTML = '<h2>Mapa web PI CMH</h2>';
+        };
+        title.addTo(map);
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_OSMStandard_0');
+        map.getPane('pane_OSMStandard_0').style.zIndex = 400;
+        var layer_OSMStandard_0 = L.tileLayer('http://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OSMStandard_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, CC-BY-SA</a>',
+            minZoom: 1,
+            maxZoom: 27,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OSMStandard_0;
+        map.addLayer(layer_OSMStandard_0);
+        map.createPane('pane_GoogleSatellite_1');
+        map.getPane('pane_GoogleSatellite_1').style.zIndex = 401;
+        var layer_GoogleSatellite_1 = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSatellite_1',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 27,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleSatellite_1;
+        function pop_veredasturbo_2(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">Nombre Vereda</th>\
+                        <td>' + (feature.properties['Nombre Vereda'] !== null ? autolinker.link(String(feature.properties['Nombre Vereda']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_veredasturbo_2_0() {
+            return {
+                pane: 'pane_veredasturbo_2',
+                opacity: 1,
+                color: 'rgba(227,26,28,1.0)',
+                dashArray: '5.0,1.0',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(150,150,150,0.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_veredasturbo_2');
+        map.getPane('pane_veredasturbo_2').style.zIndex = 402;
+        map.getPane('pane_veredasturbo_2').style['mix-blend-mode'] = 'normal';
+        var layer_veredasturbo_2 = new L.geoJson(json_veredasturbo_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_veredasturbo_2',
+            layerName: 'layer_veredasturbo_2',
+            pane: 'pane_veredasturbo_2',
+            onEachFeature: pop_veredasturbo_2,
+            style: style_veredasturbo_2_0,
+        });
+        bounds_group.addLayer(layer_veredasturbo_2);
+        map.addLayer(layer_veredasturbo_2);
+        function pop_datos_PIH_todos_3(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">Nombre Profesional</th>\
+                        <td>' + (feature.properties['Nombre Profesional'] !== null ? autolinker.link(String(feature.properties['Nombre Profesional']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Nombre Participante</th>\
+                        <td>' + (feature.properties['Nombre Participante'] !== null ? autolinker.link(String(feature.properties['Nombre Participante']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Telefono</th>\
+                        <td>' + (feature.properties['29.2.Numero de celular actualizado'] !== null ? autolinker.link(String(feature.properties['29.2.Numero de celular actualizado']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_datos_PIH_todos_3_0() {
+            return {
+                pane: 'pane_datos_PIH_todos_3',
+                radius: 8.0,
+                opacity: 1,
+                color: 'rgba(0,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 2.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,234,1,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_datos_PIH_todos_3');
+        map.getPane('pane_datos_PIH_todos_3').style.zIndex = 403;
+        map.getPane('pane_datos_PIH_todos_3').style['mix-blend-mode'] = 'normal';
+        var layer_datos_PIH_todos_3 = new L.geoJson(json_datos_PIH_todos_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_datos_PIH_todos_3',
+            layerName: 'layer_datos_PIH_todos_3',
+            pane: 'pane_datos_PIH_todos_3',
+            onEachFeature: pop_datos_PIH_todos_3,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.circleMarker(latlng, style_datos_PIH_todos_3_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_datos_PIH_todos_3);
+        map.addLayer(layer_datos_PIH_todos_3);
+        var overlaysTree = [
+            {label: '<img src="legend/datos_PIH_todos_3.png" /> datos_PIH_todos', layer: layer_datos_PIH_todos_3},
+            {label: '<img src="legend/veredasturbo_2.png" /> veredas turbo ', layer: layer_veredasturbo_2},
+            {label: "Google Satellite", layer: layer_GoogleSatellite_1},
+            {label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: 'bm' },]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        setBounds();
+        var mapDiv = document.getElementById('map');
+        var row = document.createElement('div');
+        row.className="row";
+        row.id="all";
+        row.style.height = "100%";
+        var col1 = document.createElement('div');
+        col1.className="col9";
+        col1.id = "mapWindow";
+        col1.style.height = "99%";
+        col1.style.width = "80%";
+        col1.style.display = "inline-block";
+        var col2 = document.createElement('div');
+        col2.className="col3";
+        col2.id = "menu";
+        col2.style.display = "inline-block";
+        mapDiv.parentNode.insertBefore(row, mapDiv);
+        document.getElementById("all").appendChild(col1);
+        document.getElementById("all").appendChild(col2);
+        col1.appendChild(mapDiv)
+        var Filters = {"Nombre Profesional": "str","Nombre Vereda": "str"};
+        function filterFunc() {
+          map.eachLayer(function(lyr){
+          if ("options" in lyr && "dataVar" in lyr["options"]){
+            features = this[lyr["options"]["dataVar"]].features.slice(0);
+            try{
+              for (key in Filters){
+                keyS = key.replace(/[^a-zA-Z0-9_]/g, "")
+                if (Filters[key] == "str" || Filters[key] == "bool"){
+                  var selection = [];
+                  var options = document.getElementById("sel_" + keyS).options
+                  for (var i=0; i < options.length; i++) {
+                    if (options[i].selected) selection.push(options[i].value);
+                  }
+                    try{
+                      if (key in features[0].properties){
+                        for (i = features.length - 1;
+                          i >= 0; --i){
+                          if (selection.indexOf(
+                          features[i].properties[key])<0
+                          && selection.length>0) {
+                          features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                  }
+                }
+                if (Filters[key] == "int"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (parseInt(features[i].properties[key])
+                          < sliderVals[0]
+                          || parseInt(features[i].properties[key])
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "real"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (features[i].properties[key]
+                          < sliderVals[0]
+                          || features[i].properties[key]
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "date"
+                  || Filters[key] == "datetime"
+                  || Filters[key] == "time"){
+                  try{
+                    if (key in features[0].properties){
+                      HTMLkey = key.replace(/[&\/\\#,+()$~%.'":*?<>{} ]/g, '');
+                      startdate = document.getElementById("dat_" +
+                        HTMLkey + "_date1").value.replace(" ", "T");
+                      enddate = document.getElementById("dat_" +
+                        HTMLkey + "_date2").value.replace(" ", "T");
+                      for (i = features.length - 1; i >= 0; --i){
+                        if (features[i].properties[key] < startdate
+                          || features[i].properties[key] > enddate){
+                          features.splice(i,1);
+                        }
+                      }
+                    }
+                  } catch(err){
+                  }
+                }
+              }
+            } catch(err){
+            }
+          this[lyr["options"]["layerName"]].clearLayers();
+          this[lyr["options"]["layerName"]].addData(features);
+          }
+          })
+        }
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_NombreProfesional = document.createElement('div');
+            div_NombreProfesional.id = "div_NombreProfesional";
+            div_NombreProfesional.className= "filterselect";
+            document.getElementById("menu").appendChild(div_NombreProfesional);
+            sel_NombreProfesional = document.createElement('select');
+            sel_NombreProfesional.multiple = true;
+            sel_NombreProfesional.size = 10;
+            sel_NombreProfesional.id = "sel_NombreProfesional";
+            var NombreProfesional_options_str = "<option value='' unselected></option>";
+            sel_NombreProfesional.onchange = function(){filterFunc()};
+            NombreProfesional_options_str  += '<option value="Aurencio Lozano Juncar">Aurencio Lozano Juncar</option>';
+            NombreProfesional_options_str  += '<option value="Carlos Alberto Nobles Chocue">Carlos Alberto Nobles Chocue</option>';
+            NombreProfesional_options_str  += '<option value="Erika Paola Morelo Durango">Erika Paola Morelo Durango</option>';
+            NombreProfesional_options_str  += '<option value="Erika paola Morelo Durango">Erika paola Morelo Durango</option>';
+            NombreProfesional_options_str  += '<option value="Fredys Arley Garcia Moreno">Fredys Arley Garcia Moreno</option>';
+            NombreProfesional_options_str  += '<option value="Ivio Andres Vivas Cordoba">Ivio Andres Vivas Cordoba</option>';
+            NombreProfesional_options_str  += '<option value="Jesus Murillo Valoyes">Jesus Murillo Valoyes</option>';
+            NombreProfesional_options_str  += '<option value="Jonny Felipe Arias Mosquera">Jonny Felipe Arias Mosquera</option>';
+            NombreProfesional_options_str  += '<option value="Justina gomez lara">Justina gomez lara</option>';
+            NombreProfesional_options_str  += '<option value="Liliana Maria Herazo Cuadrado">Liliana Maria Herazo Cuadrado</option>';
+            NombreProfesional_options_str  += '<option value="Miladis Manyoma Cuesta">Miladis Manyoma Cuesta</option>';
+            NombreProfesional_options_str  += '<option value="Nebardo Pedroza Cogollo">Nebardo Pedroza Cogollo</option>';
+            NombreProfesional_options_str  += '<option value="Nebardo Pedroza Cogollo ">Nebardo Pedroza Cogollo </option>';
+            NombreProfesional_options_str  += '<option value="Ruperto Mendoza Lozano">Ruperto Mendoza Lozano</option>';
+            NombreProfesional_options_str  += '<option value="Ruth Estella Quiroz Muñoz">Ruth Estella Quiroz Muñoz</option>';
+            NombreProfesional_options_str  += '<option value="Saúl Andrés Ríos Santacruz">Saúl Andrés Ríos Santacruz</option>';
+            NombreProfesional_options_str  += '<option value="Sneider Martinez">Sneider Martinez</option>';
+            NombreProfesional_options_str  += '<option value="Wilson Enrique Varela Palomeque">Wilson Enrique Varela Palomeque</option>';
+            NombreProfesional_options_str  += '<option value="Yamile Tatiana Asprilla Borja">Yamile Tatiana Asprilla Borja</option>';
+            NombreProfesional_options_str  += '<option value="Yeison Javier Navas Porras">Yeison Javier Navas Porras</option>';
+            NombreProfesional_options_str  += '<option value="Yenifer Andrea Molina Peñata">Yenifer Andrea Molina Peñata</option>';
+            NombreProfesional_options_str  += '<option value="Yinela Carvajal Robledo">Yinela Carvajal Robledo</option>';
+            NombreProfesional_options_str  += '<option value="erikamorelo50">erikamorelo50</option>';
+            NombreProfesional_options_str  += '<option value="yajaira Robledo pino">yajaira Robledo pino</option>';
+            NombreProfesional_options_str  += '<option value="yina yurley corrales medina">yina yurley corrales medina</option>';
+            sel_NombreProfesional.innerHTML = NombreProfesional_options_str;
+            div_NombreProfesional.appendChild(sel_NombreProfesional);
+            var lab_NombreProfesional = document.createElement('div');
+            lab_NombreProfesional.innerHTML = 'Nombre Profesional';
+            lab_NombreProfesional.className = 'filterlabel';
+            div_NombreProfesional.appendChild(lab_NombreProfesional);
+            var reset_NombreProfesional = document.createElement('div');
+            reset_NombreProfesional.innerHTML = 'clear filter';
+            reset_NombreProfesional.className = 'filterlabel';
+            reset_NombreProfesional.onclick = function() {
+                var options = document.getElementById("sel_NombreProfesional").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_NombreProfesional.appendChild(reset_NombreProfesional);
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_NombreVereda = document.createElement('div');
+            div_NombreVereda.id = "div_NombreVereda";
+            div_NombreVereda.className= "filterselect";
+            document.getElementById("menu").appendChild(div_NombreVereda);
+            sel_NombreVereda = document.createElement('select');
+            sel_NombreVereda.multiple = true;
+            sel_NombreVereda.size = 10;
+            sel_NombreVereda.id = "sel_NombreVereda";
+            var NombreVereda_options_str = "<option value='' unselected></option>";
+            sel_NombreVereda.onchange = function(){filterFunc()};
+            NombreVereda_options_str  += '<option value="11 DE NOVIEMBRE">11 DE NOVIEMBRE</option>';
+            NombreVereda_options_str  += '<option value="27 DE DICIEMBRE">27 DE DICIEMBRE</option>';
+            NombreVereda_options_str  += '<option value="ACHIOTE">ACHIOTE</option>';
+            NombreVereda_options_str  += '<option value="AGUAS CLARAS">AGUAS CLARAS</option>';
+            NombreVereda_options_str  += '<option value="AGUAS FRIAS">AGUAS FRIAS</option>';
+            NombreVereda_options_str  += '<option value="AGUAS PRIETAS">AGUAS PRIETAS</option>';
+            NombreVereda_options_str  += '<option value="AHUYAMA">AHUYAMA</option>';
+            NombreVereda_options_str  += '<option value="AHUYAMITA">AHUYAMITA</option>';
+            NombreVereda_options_str  += '<option value="ALTO CAIMAN">ALTO CAIMAN</option>';
+            NombreVereda_options_str  += '<option value="ALTO CIRILO">ALTO CIRILO</option>';
+            NombreVereda_options_str  += '<option value="ALTO DE MULATOS">ALTO DE MULATOS</option>';
+            NombreVereda_options_str  += '<option value="ALTO MANTECA">ALTO MANTECA</option>';
+            NombreVereda_options_str  += '<option value="ALTOS DE NUEVA FE">ALTOS DE NUEVA FE</option>';
+            NombreVereda_options_str  += '<option value="ARCUA ARRIBA">ARCUA ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="ARCUA CENTRAL">ARCUA CENTRAL</option>';
+            NombreVereda_options_str  += '<option value="BAJO CIRILO">BAJO CIRILO</option>';
+            NombreVereda_options_str  += '<option value="BARRO COLORADO">BARRO COLORADO</option>';
+            NombreVereda_options_str  += '<option value="BOCA DE MATA DE PLATANO">BOCA DE MATA DE PLATANO</option>';
+            NombreVereda_options_str  += '<option value="BOCA DE TIO LOPEZ">BOCA DE TIO LOPEZ</option>';
+            NombreVereda_options_str  += '<option value="BOCA LIMON">BOCA LIMON</option>';
+            NombreVereda_options_str  += '<option value="BOCAS">BOCAS</option>';
+            NombreVereda_options_str  += '<option value="BOCAS DEL RIO TURBO">BOCAS DEL RIO TURBO</option>';
+            NombreVereda_options_str  += '<option value="BONGA">BONGA</option>';
+            NombreVereda_options_str  += '<option value="BRAZO IZQUIERDO">BRAZO IZQUIERDO</option>';
+            NombreVereda_options_str  += '<option value="BRUNITO">BRUNITO</option>';
+            NombreVereda_options_str  += '<option value="BRUNITO ARRIBA">BRUNITO ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="BRUNITO MEDIO">BRUNITO MEDIO</option>';
+            NombreVereda_options_str  += '<option value="CACAHUAL ABAJO">CACAHUAL ABAJO</option>';
+            NombreVereda_options_str  += '<option value="CACAHUAL ARRIBA">CACAHUAL ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="CAIMANCITO">CAIMANCITO</option>';
+            NombreVereda_options_str  += '<option value="CALIFORNIA">CALIFORNIA</option>';
+            NombreVereda_options_str  += '<option value="CALLE LARGA">CALLE LARGA</option>';
+            NombreVereda_options_str  += '<option value="CARABALLITO">CARABALLITO</option>';
+            NombreVereda_options_str  += '<option value="CARABALLO">CARABALLO</option>';
+            NombreVereda_options_str  += '<option value="CARACOLI">CARACOLI</option>';
+            NombreVereda_options_str  += '<option value="CASA ROJA">CASA ROJA</option>';
+            NombreVereda_options_str  += '<option value="CASANOVA">CASANOVA</option>';
+            NombreVereda_options_str  += '<option value="CERRITOS">CERRITOS</option>';
+            NombreVereda_options_str  += '<option value="CIELO AZUL">CIELO AZUL</option>';
+            NombreVereda_options_str  += '<option value="CIENAGUITA">CIENAGUITA</option>';
+            NombreVereda_options_str  += '<option value="CIRILO MEDIO">CIRILO MEDIO</option>';
+            NombreVereda_options_str  += '<option value="COCUELO SAN FELIPE">COCUELO SAN FELIPE</option>';
+            NombreVereda_options_str  += '<option value="COMUNAL LA SUERTE">COMUNAL LA SUERTE</option>';
+            NombreVereda_options_str  += '<option value="COMUNAL SAN JORGE">COMUNAL SAN JORGE</option>';
+            NombreVereda_options_str  += '<option value="COPE">COPE</option>';
+            NombreVereda_options_str  += '<option value="COQUITAL">COQUITAL</option>';
+            NombreVereda_options_str  += '<option value="COQUITALITO">COQUITALITO</option>';
+            NombreVereda_options_str  += '<option value="COQUITOS">COQUITOS</option>';
+            NombreVereda_options_str  += '<option value="EL AZUCAR">EL AZUCAR</option>';
+            NombreVereda_options_str  += '<option value="EL BARRO">EL BARRO</option>';
+            NombreVereda_options_str  += '<option value="EL BONGO">EL BONGO</option>';
+            NombreVereda_options_str  += '<option value="EL CAHUAL">EL CAHUAL</option>';
+            NombreVereda_options_str  += '<option value="EL CAIMAN">EL CAIMAN</option>';
+            NombreVereda_options_str  += '<option value="EL CEDRO">EL CEDRO</option>';
+            NombreVereda_options_str  += '<option value="EL COCUELO">EL COCUELO</option>';
+            NombreVereda_options_str  += '<option value="EL CONGO">EL CONGO</option>';
+            NombreVereda_options_str  += '<option value="EL DOS">EL DOS</option>';
+            NombreVereda_options_str  += '<option value="EL ESFUERZO">EL ESFUERZO</option>';
+            NombreVereda_options_str  += '<option value="EL INDIO">EL INDIO</option>';
+            NombreVereda_options_str  += '<option value="EL KILOMETRO">EL KILOMETRO</option>';
+            NombreVereda_options_str  += '<option value="EL LIMON">EL LIMON</option>';
+            NombreVereda_options_str  += '<option value="EL OLLETO">EL OLLETO</option>';
+            NombreVereda_options_str  += '<option value="EL PALMITO">EL PALMITO</option>';
+            NombreVereda_options_str  += '<option value="EL PORVENIR">EL PORVENIR</option>';
+            NombreVereda_options_str  += '<option value="EL PORVENIR DE TULAPA">EL PORVENIR DE TULAPA</option>';
+            NombreVereda_options_str  += '<option value="EL RECREO">EL RECREO</option>';
+            NombreVereda_options_str  += '<option value="EL TAGUAL">EL TAGUAL</option>';
+            NombreVereda_options_str  += '<option value="EL TONEL">EL TONEL</option>';
+            NombreVereda_options_str  += '<option value="EL VEINTE">EL VEINTE</option>';
+            NombreVereda_options_str  += '<option value="EL VENADO">EL VENADO</option>';
+            NombreVereda_options_str  += '<option value="EL VOLCAN">EL VOLCAN</option>';
+            NombreVereda_options_str  += '<option value="ELALGODON">ELALGODON</option>';
+            NombreVereda_options_str  += '<option value="GALILEA">GALILEA</option>';
+            NombreVereda_options_str  += '<option value="GUADUALITO">GUADUALITO</option>';
+            NombreVereda_options_str  += '<option value="GUAYABA ARRIBA">GUAYABA ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="GUAYABAL ABAJO">GUAYABAL ABAJO</option>';
+            NombreVereda_options_str  += '<option value="GUSTAVO MEJIA">GUSTAVO MEJIA</option>';
+            NombreVereda_options_str  += '<option value="HACIENDA CURRULAO">HACIENDA CURRULAO</option>';
+            NombreVereda_options_str  += '<option value="HONDURAS">HONDURAS</option>';
+            NombreVereda_options_str  += '<option value="ISAIAS">ISAIAS</option>';
+            NombreVereda_options_str  += '<option value="ISAIAS ARRIBA">ISAIAS ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="JUAN BENITEZ">JUAN BENITEZ</option>';
+            NombreVereda_options_str  += '<option value="KUWAIT">KUWAIT</option>';
+            NombreVereda_options_str  += '<option value="LA ARENERA">LA ARENERA</option>';
+            NombreVereda_options_str  += '<option value="LA ARENOSA">LA ARENOSA</option>';
+            NombreVereda_options_str  += '<option value="LA CARBONERA">LA CARBONERA</option>';
+            NombreVereda_options_str  += '<option value="LA CENIZA">LA CENIZA</option>';
+            NombreVereda_options_str  += '<option value="LA CORAZA">LA CORAZA</option>';
+            NombreVereda_options_str  += '<option value="LA CUCARACHA">LA CUCARACHA</option>';
+            NombreVereda_options_str  += '<option value="LA DESEADA">LA DESEADA</option>';
+            NombreVereda_options_str  += '<option value="LA DONCELLA">LA DONCELLA</option>';
+            NombreVereda_options_str  += '<option value="LA ESPERANZA">LA ESPERANZA</option>';
+            NombreVereda_options_str  += '<option value="LA FRIA">LA FRIA</option>';
+            NombreVereda_options_str  += '<option value="LA ILUSION">LA ILUSION</option>';
+            NombreVereda_options_str  += '<option value="LA ISLITA">LA ISLITA</option>';
+            NombreVereda_options_str  += '<option value="LA LEONA">LA LEONA</option>';
+            NombreVereda_options_str  += '<option value="LA LLANA">LA LLANA</option>';
+            NombreVereda_options_str  += '<option value="LA NARANJA">LA NARANJA</option>';
+            NombreVereda_options_str  += '<option value="LA PEDREGOSA">LA PEDREGOSA</option>';
+            NombreVereda_options_str  += '<option value="LA PITA">LA PITA</option>';
+            NombreVereda_options_str  += '<option value="LA PITICA">LA PITICA</option>';
+            NombreVereda_options_str  += '<option value="LA PIÑA">LA PIÑA</option>';
+            NombreVereda_options_str  += '<option value="LA PLAYONA">LA PLAYONA</option>';
+            NombreVereda_options_str  += '<option value="LA POLA">LA POLA</option>';
+            NombreVereda_options_str  += '<option value="LA PRIMAVERA">LA PRIMAVERA</option>';
+            NombreVereda_options_str  += '<option value="LA PUJARRA">LA PUJARRA</option>';
+            NombreVereda_options_str  += '<option value="LA ROSITA">LA ROSITA</option>';
+            NombreVereda_options_str  += '<option value="LA TACHUELA">LA TACHUELA</option>';
+            NombreVereda_options_str  += '<option value="LA TE">LA TE</option>';
+            NombreVereda_options_str  += '<option value="LA TECA">LA TECA</option>';
+            NombreVereda_options_str  += '<option value="LA TEMPESTAD">LA TEMPESTAD</option>';
+            NombreVereda_options_str  += '<option value="LA TRAMPA">LA TRAMPA</option>';
+            NombreVereda_options_str  += '<option value="LA UNION">LA UNION</option>';
+            NombreVereda_options_str  += '<option value="LAS BABILLAS">LAS BABILLAS</option>';
+            NombreVereda_options_str  += '<option value="LAS CAMELIAS">LAS CAMELIAS</option>';
+            NombreVereda_options_str  += '<option value="LAS CAÑAS">LAS CAÑAS</option>';
+            NombreVereda_options_str  += '<option value="LAS FLORES">LAS FLORES</option>';
+            NombreVereda_options_str  += '<option value="LAS GARZAS">LAS GARZAS</option>';
+            NombreVereda_options_str  += '<option value="LAS MANTECAS">LAS MANTECAS</option>';
+            NombreVereda_options_str  += '<option value="LAS MERCEDES">LAS MERCEDES</option>';
+            NombreVereda_options_str  += '<option value="LAS MONAS">LAS MONAS</option>';
+            NombreVereda_options_str  += '<option value="LAS PAVAS">LAS PAVAS</option>';
+            NombreVereda_options_str  += '<option value="LEON ABAJO">LEON ABAJO</option>';
+            NombreVereda_options_str  += '<option value="LEONCITO">LEONCITO</option>';
+            NombreVereda_options_str  += '<option value="LIMON MEDIO">LIMON MEDIO</option>';
+            NombreVereda_options_str  += '<option value="LOMAS AISLADAS">LOMAS AISLADAS</option>';
+            NombreVereda_options_str  += '<option value="LOS CUARENTA">LOS CUARENTA</option>';
+            NombreVereda_options_str  += '<option value="LOS ENAMORADOS">LOS ENAMORADOS</option>';
+            NombreVereda_options_str  += '<option value="LOS INDIOS">LOS INDIOS</option>';
+            NombreVereda_options_str  += '<option value="LOS MANATIES">LOS MANATIES</option>';
+            NombreVereda_options_str  += '<option value="LOS MANGOS MEDIOS">LOS MANGOS MEDIOS</option>';
+            NombreVereda_options_str  += '<option value="LOS MONCHOLOS">LOS MONCHOLOS</option>';
+            NombreVereda_options_str  += '<option value="LUCIO">LUCIO</option>';
+            NombreVereda_options_str  += '<option value="MANKENDAL">MANKENDAL</option>';
+            NombreVereda_options_str  += '<option value="MANTAGORDA">MANTAGORDA</option>';
+            NombreVereda_options_str  += '<option value="MANUEL CUELLO">MANUEL CUELLO</option>';
+            NombreVereda_options_str  += '<option value="MATA DE PLATANO ARRIBA">MATA DE PLATANO ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="MIL PESARES">MIL PESARES</option>';
+            NombreVereda_options_str  += '<option value="MONO MACHO">MONO MACHO</option>';
+            NombreVereda_options_str  += '<option value="MONOMAHCO">MONOMAHCO</option>';
+            NombreVereda_options_str  += '<option value="MONTE VERDE NO 1">MONTE VERDE NO 1</option>';
+            NombreVereda_options_str  += '<option value="MONTE VERDE NO 2">MONTE VERDE NO 2</option>';
+            NombreVereda_options_str  += '<option value="NUEVA COLOMBIA">NUEVA COLOMBIA</option>';
+            NombreVereda_options_str  += '<option value="NUEVA ESPERANZA">NUEVA ESPERANZA</option>';
+            NombreVereda_options_str  += '<option value="NUEVA GRANADA">NUEVA GRANADA</option>';
+            NombreVereda_options_str  += '<option value="NUEVA TULAPA">NUEVA TULAPA</option>';
+            NombreVereda_options_str  += '<option value="NUEVA UNION">NUEVA UNION</option>';
+            NombreVereda_options_str  += '<option value="NUEVO ANTIOQUIA">NUEVO ANTIOQUIA</option>';
+            NombreVereda_options_str  += '<option value="NUEVO ORIENTE">NUEVO ORIENTE</option>';
+            NombreVereda_options_str  += '<option value="OVIEDO">OVIEDO</option>';
+            NombreVereda_options_str  += '<option value="PA QUE MAS">PA QUE MAS</option>';
+            NombreVereda_options_str  += '<option value="PALO DE AGUA">PALO DE AGUA</option>';
+            NombreVereda_options_str  += '<option value="PALOS BLANCOS">PALOS BLANCOS</option>';
+            NombreVereda_options_str  += '<option value="PIEDRECITAS">PIEDRECITAS</option>';
+            NombreVereda_options_str  += '<option value="PLAYA LARGA">PLAYA LARGA</option>';
+            NombreVereda_options_str  += '<option value="PUEBLO BELLO">PUEBLO BELLO</option>';
+            NombreVereda_options_str  += '<option value="PUEBLO GALLETA">PUEBLO GALLETA</option>';
+            NombreVereda_options_str  += '<option value="PUERTO CESAR">PUERTO CESAR</option>';
+            NombreVereda_options_str  += '<option value="PUERTO RICO">PUERTO RICO</option>';
+            NombreVereda_options_str  += '<option value="PUERTO VOY">PUERTO VOY</option>';
+            NombreVereda_options_str  += '<option value="PUNTO ROJO">PUNTO ROJO</option>';
+            NombreVereda_options_str  += '<option value="PUYA ABAJO">PUYA ABAJO</option>';
+            NombreVereda_options_str  += '<option value="PUYA ARRIBA">PUYA ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="PUYA MEDIO">PUYA MEDIO</option>';
+            NombreVereda_options_str  += '<option value="PUYITA">PUYITA</option>';
+            NombreVereda_options_str  += '<option value="RANCHERIA">RANCHERIA</option>';
+            NombreVereda_options_str  += '<option value="REAL COCUELO">REAL COCUELO</option>';
+            NombreVereda_options_str  += '<option value="RIO TURBO">RIO TURBO</option>';
+            NombreVereda_options_str  += '<option value="SALSIPUEDES">SALSIPUEDES</option>';
+            NombreVereda_options_str  += '<option value="SAN ANDRES DE TULAPA">SAN ANDRES DE TULAPA</option>';
+            NombreVereda_options_str  += '<option value="SAN FELIPE">SAN FELIPE</option>';
+            NombreVereda_options_str  += '<option value="SAN MARCANDA">SAN MARCANDA</option>';
+            NombreVereda_options_str  += '<option value="SAN PABLO">SAN PABLO</option>';
+            NombreVereda_options_str  += '<option value="SAN VICENTE DEL CONGO">SAN VICENTE DEL CONGO</option>';
+            NombreVereda_options_str  += '<option value="SANTA BARBARA ABAJO">SANTA BARBARA ABAJO</option>';
+            NombreVereda_options_str  += '<option value="SANTA BARBARA ARRIBA">SANTA BARBARA ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="SANTA FE DE LA ISLITA">SANTA FE DE LA ISLITA</option>';
+            NombreVereda_options_str  += '<option value="SANTA FE DE LOS MANGOS">SANTA FE DE LOS MANGOS</option>';
+            NombreVereda_options_str  += '<option value="SANTA INES">SANTA INES</option>';
+            NombreVereda_options_str  += '<option value="SANTA ROSA">SANTA ROSA</option>';
+            NombreVereda_options_str  += '<option value="SEMANASANTA">SEMANASANTA</option>';
+            NombreVereda_options_str  += '<option value="SIETE DE AGOSTO">SIETE DE AGOSTO</option>';
+            NombreVereda_options_str  += '<option value="SIETE VUELTAS">SIETE VUELTAS</option>';
+            NombreVereda_options_str  += '<option value="SINAI">SINAI</option>';
+            NombreVereda_options_str  += '<option value="SURIQUI">SURIQUI</option>';
+            NombreVereda_options_str  += '<option value="TIE">TIE</option>';
+            NombreVereda_options_str  += '<option value="TIO GIL">TIO GIL</option>';
+            NombreVereda_options_str  += '<option value="TIO LOPEZ ALTO">TIO LOPEZ ALTO</option>';
+            NombreVereda_options_str  += '<option value="TIO LOPEZ MEDIO">TIO LOPEZ MEDIO</option>';
+            NombreVereda_options_str  += '<option value="TORIBIO ALTO">TORIBIO ALTO</option>';
+            NombreVereda_options_str  += '<option value="TORIBIO MEDIO">TORIBIO MEDIO</option>';
+            NombreVereda_options_str  += '<option value="TUMARADO">TUMARADO</option>';
+            NombreVereda_options_str  += '<option value="TUNTUN ABAJO">TUNTUN ABAJO</option>';
+            NombreVereda_options_str  += '<option value="TUNTUN ARRIBA">TUNTUN ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="VEREDA PUEBLO REGADO">VEREDA PUEBLO REGADO</option>';
+            NombreVereda_options_str  += '<option value="VILLA MARIA">VILLA MARIA</option>';
+            NombreVereda_options_str  += '<option value="VILLA MARIA ARRIBA">VILLA MARIA ARRIBA</option>';
+            NombreVereda_options_str  += '<option value="VILLA ROSA">VILLA ROSA</option>';
+            NombreVereda_options_str  += '<option value="YOYA">YOYA</option>';
+            NombreVereda_options_str  += '<option value="ZABALETA">ZABALETA</option>';
+            NombreVereda_options_str  += '<option value="ZONA DE EXPANSION URBANA">ZONA DE EXPANSION URBANA</option>';
+            sel_NombreVereda.innerHTML = NombreVereda_options_str;
+            div_NombreVereda.appendChild(sel_NombreVereda);
+            var lab_NombreVereda = document.createElement('div');
+            lab_NombreVereda.innerHTML = 'Nombre Vereda';
+            lab_NombreVereda.className = 'filterlabel';
+            div_NombreVereda.appendChild(lab_NombreVereda);
+            var reset_NombreVereda = document.createElement('div');
+            reset_NombreVereda.innerHTML = 'clear filter';
+            reset_NombreVereda.className = 'filterlabel';
+            reset_NombreVereda.onclick = function() {
+                var options = document.getElementById("sel_NombreVereda").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_NombreVereda.appendChild(reset_NombreVereda);
+        resetLabels([layer_veredasturbo_2]);
+        map.on("zoomend", function(){
+            resetLabels([layer_veredasturbo_2]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_veredasturbo_2]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_veredasturbo_2]);
+        });
+        </script>        
+    </body>
+</html>
